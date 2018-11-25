@@ -1,0 +1,181 @@
+指数变换：new_r = Clog(r+1)
++1是为了防止log0；C是为了保证值域还是0～L。L一般是255
+把图像整体变亮，拉伸暗的区间（增大对比度、增强细节）、压缩暗的区间
+
+反对数变换：跟对数变换对（L/2，L/2）呈中心对称
+把图像整体变暗，拉伸亮的区间（增大对比度、增强细节）、压缩亮的区间
+
+类似的有，gamma变换/校正：显示器在显示图像前基本都会这么做
+分段折线变换，每一段的拉伸斜率都不一样。斜率大的更能增强细节
+变换可以不是连续的。可以就让其中一段对应到255，其他的都不变。
+
+直方图均衡化
+取直方图的函数 imhist
+先列出各个灰度级的频率，然后使用某个T(r)函数进行变换。T(r)满足下列两个条件：
+（1）T(r)在定义域中为单值且单调递增，即使得灰度级的相对大小关系不变。
+（2）定义域跟值域相同，即不能改变动态范围。
+T(r)一般是(L-1)乘以频率的前缀和：由于各个频率都大于0，所以a[i]序列的前缀和严格单增；所有频率的和为1，所以动态范围仍是[0,L-1]。
+
+效果：
+对于离散的图像 使得动态范围变大（直方图间距变大，不是灰度级数量）
+因为四舍五入，部分频率低的灰度级合并；频率高的灰度级范围拉长、即对比度变大。
+
+还可以做局部处理
+自适应直方图均衡 函数 adapthisteq
+直接均衡化 vs 把图像划分成若干个网格、逐个网格内均衡化 避免把需要比较高的对比度的原图给变糟（比如黑底白图或者白底黑图）
+根据局部灰度对比全局 判断亮暗
+根据局部方差对比全局 判断对比度大小
+
+直方图规定化：函数 histeq
+做完直方图均衡化后，还可以做直方图规定化/直方图匹配，将直方图变成人为想要的样子。
+输入图像有一个密度分布函数pr 人为指定一个密度分布函数pz（比如另一个图像的密度分布） 然后把输入图像进行变换 而且变换前后的图像的均衡化也接近
+
+规定化：设pr积分是T，pz积分是G，变换函数就是G^-1（T（x）），于是G（y）=T（x） 
+书上的例题：
+灰度级	T=pr积分		G=pz积分
+	（它就是均衡化得到的灰度级）
+0		1			0
+1		3			0
+2		5			0
+3		6			1：灰度级0->T->1->G^-1->3
+4		6			2：灰度级1->T->3->G^-1（相对最接近的）->4
+5		7			5：灰度级2->T->5->G^-1->5
+6		7			6：灰度级34->T->6->G^-1->6
+7		7			7：灰度级567->T->7->G^-1->7
+
+然后是各种滤波器
+平滑处理等，窗口不要太大：让本来陡峭的边缘区域也变平滑了
+也可以平滑完之后再做一个二值化处理，让模糊的图像再变分明
+
+1、均值滤波器的意义：只考虑一个局部。假如用一个像素代替滤波器视野内的全部值
+（即认为局部不变），选择平均值能使均方误差最小
+证明：
+(x-a1)^2+(x-a2)^2+...+(x-an)^2
+
+= (x-a1)^2+(x-a2)^2+...+(x-an)^2
+
+尝试用均值不等式？ >= 
+  x-a1+x-a2+...+x-an
+n(------------------)^2 (when x-a1=x-a2=...=x-an. impossible)
+          n
+
+直接求导：(x-a1)+(x-a2)+...+(x-an) = 0，得到极值点在∑ai/n处
+
+2、高斯滤波器的意义：https://blog.csdn.net/cdd2xd/article/details/52067593
+热传递的规律，涉及到拉普拉斯算子
+把灰度值想象成热量，可以证明：做一次高斯滤波，相当于模拟热量的一次传递
+当模拟多次以后，系统将会趋于平衡（图像模糊了）
+
+3、非局部均值滤波（non local means/average，Buades）去噪声（denoising）
+不应该贸然地把一个点替换成其相邻部位的均值：一个局部可能就是图像边缘
+最好找到图像中相似的几个像素点：它们的邻域相似。对这些局部求均值，替换原来的每一个中心像素（见图）
+最简单的应用：去除加性噪声的方法：连拍几张照片，求平均
+
+怎么找到相似（两者的均方误差小于某个阈值）的邻域？一般还是就在附近找。
+在www.ipol.im/pub/art/2011/bcm_nim上有代码和实现效果展示
+处理的图像最好不要有太多纹理
+
+4、中值滤波，对于细节的保留做的比较好（适合于要求比较精细的图像，比如电路板）
+不会像均值类滤波器一样显得比较模糊，尤其适合处理椒盐噪声！！！
+选择中间值（中位数）能使绝对值误差最小：比起均方误差更有鲁棒性（？？？）
+
+5、锐化的滤波器：一阶导数和二阶导数
+一阶导数就是f(x+1,y)-f(x,y)这样作差
+二阶导数就是一阶导数作差：f(x+1,y)+f(x-1,y)-2f(x,y)
+再把它们改写成一些mask，比如拉普拉斯算子（x方向和y方向的二阶导数之和）
+0 1 0
+1 -4 1
+0 1 0
+把求到的结果加在原图上进行锐化
+
+边缘检测（edge detection）：sobel算子等
+彩色边缘检测（color edge detection）
+
+对于空间域连续的矢量图（vector image），可以真正地求其每一个通道上每一点处的梯度
+也就是变化最大的方向；同时也有变化最小的方向：法向，由此引出水平集（level set）的概念
+
+——————————————————————————————————————————————————————————
+
+作业
+1. m～M映射到0～L：(x-m)/(M-m)*L
+
+2. Why global discrete histogram equalization does not, in general, yield a flat (uniform) histogram?
+因为离散有误差，要量化。但是不选Because the histogram equalization mathematical derivation doesn’t exist for discrete signals.
+如果不考虑量化，Actually, global discrete histogram equalization always yields flat histograms by definition.但是也不选这个？？？
+
+3. Discrete histogram equalization is an invertible operation, meaning we can recover the original image from the equalized one by inverting the operation, since:
+可逆。不选There is a unique histogram equalization formula per image.
+不选Pixels with different values are mapped to pixels with different values.
+那大概应该选其实并不可逆了……
+
+4. Given an image with only 22 pixels and 33 possible values for each one. Determine the number of possible different images and the number of possible different histograms
+a1+a2+a3=3
+1 1 1 1 1 1 = 6
+C53 = 6
+
+6. Applying a 3×3 averaging filter to an image a large (infinity) number of times is
+应该是Equivalent to replacing all the pixel values by the average of the values in the original image. 不过怎么证明呢？
+
+10. Consider an image denoising operation TT, and write T(I)T(I) the application of TT to the image II.
+non-local means algorithm，它不是幂等的
+
+中值滤波器，实现文件为my_median.m
+I=imread('lena.png');
+gray=rgb2gray(I);
+imshow(my_median(gray,3,3) - medfilt2(gray,[3 3]));
+得到的差是全黑的，说明算法正确
+I = imnoise(I,’salt & pepper’,0.02); %也可以尝试加入噪声
+
+直方图均衡化，懒得写……
+
+实现non local means算法。论文看起来很复杂。参照：
+https://blog.csdn.net/piaoxuezhong/article/details/78345929
+保存为NLmeansfilter.m文件
+%% 测试函数
+clc,clear all,close all;
+ima=double(imread('3.jpg')); % 这里用一张小一点的图片，否则会很卡
+% 甚至可以写成zeros(10,10,3)，体验一下效果即可
+[wid,len,channels]=size(ima);
+% add noise
+sigma=10;
+rima=ima+sigma*randn(size(ima)); 
+
+% denoise
+fima=rima;
+if channels>2
+    for i=1:channels      
+       fima(:,:,i)=NLmeansfilter(rima(:,:,i),5,2,sigma);
+    end
+end
+ 
+% show results
+subplot(1,3,1),imshow(uint8(ima)),title('original');
+subplot(1,3,2),imshow(uint8(rima)),title('noisy');
+subplot(1,3,3),imshow(uint8(fima)),title('filtered');
+
+实现颜色边缘检测；尝试能不能检测出刘勃麟的画：能啊
+当3个channel相等时会发生什么？会变成灰度图的检测
+A=imread('red.jpg'); 
+hx=[-1 -2 -1;0 0 0;1 2 1]; %sobel垂直梯度模板
+hy=hx';                    %sobel水平梯度模板
+[H,W,C] = size(A);
+grad = zeros(H,W,C);
+for k=1:C
+    gradx=filter2(hx,A(:,:,k),'same');
+    grady=filter2(hy,A(:,:,k),'same');
+    % grad(:,:,k)=uint8(sqrt(0.5*(gradx.^2+grady.^2)));
+    grad(:,:,k)=0.5*(gradx+grady); % 平方平均的话会溢出
+end
+imshow(grad);
+
+考虑一个图像并添加随机噪声。对于不同的N值重复此N次，并添加结果图像。
+你观察到了什么？加性噪声都是如此：N越大，N张图求平均过后越贴近原图
+至于是不是平方级别地贴近，我就不知道了
+
+逐帧处理视频：
+拍摄视频，并进行逐帧直方图均衡并运行生成的视频。 现在将一组帧视为一个大图像（？？？），并立即对所有帧进行直方图均衡。什么看起来更好？ 请参阅此示例，了解如何在Matlab中阅读和处理视频：
+% code part
+拍摄视频并逐帧进行non local means去噪。现在使用一组帧作为大图像。 这允许您例如找到更多匹配的块（因为您在跨帧搜索）。 比较结果。 如果现在使用3D时空块，例如5×5,3×3块，并将这组帧视为3D图像，会发生什么？ 试试这个并与之前的结果进行比较。
+搜索“迷彩艺术家刘柏林。”你认为你可以使用你正在学习的工具来探测他吗？
+
+这能把我的电脑卡死……算了
