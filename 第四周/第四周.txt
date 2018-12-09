@@ -1,0 +1,136 @@
+图像退化：散焦、运动模糊、传感器噪声……
+总之，原图f因为某些原因，变成了g
+
+图像复原（restoration & reconstruction）：要从g恢复回f
+跟图像增强的区别：根据模型，恢复原图，就算原图并不“好看”；
+而图像增强是要把图像变“好看”：调高亮度、对比度……
+
+一般认为，g(x,y) = f(x,y)*H(x,y) + η(x,y)
+*代表卷积，η代表噪声
+乘性噪声和加性噪声。取个对数，乘就变成加了
+
+其实，现实中没有任何系统会真的产生高斯噪声
+但是跟很多真实的噪声的形式很像，比如瑞利噪声、gamma噪声、指数噪声
+数学形式又好
+
+均匀噪声：<a和>b时都没有噪声，a～b时噪声恒为1/(b-a)
+是怎么造成的呢？是量化造成的！a=0, b=255
+噪声不一定是因为设备产生的，也可能来自于对于图像的操作
+
+脉冲噪声：椒盐噪声
+来源：只有监视某个频率的传感器坏了，没有信号了
+
+根据纯色（注意是纯色）图像的直方图形状，可以猜到噪声的类型
+如果图像里有两类颜色，那就是双峰值，得从中间切开再看两边的类型
+严密一点，用各种噪声分布图像来拟合这个直方图，看谁的误差最小
+然后也可以估计其期望和方差
+注意，没有保证每一小块加的噪声类型是相同的！最好对每一小块都估计一下
+如果是同一种噪声，把每一小块的期望和方差求平均，得到全图的期望和方差
+
+估计对了噪声，才能使用对的方法去噪
+高斯、瑞利、均匀噪声：均值滤波器
+椒盐噪声：中值滤波器
+需要检验！！！对g去噪之后得到拟合的f，然后检验拟合的f-g是不是原来估计的噪声分布
+
+加噪声的函数：imnoise(I, 'salt & pepper', 0.2) % 表示20%的椒盐噪声
+如果是高斯噪声，第三个参数就表示方差
+
+
+
+通过实验 建立退化的数学模型
+假如g = hf + η（即eta）
+1、大气湍流模型 类似于高斯低通滤波器 有一个常数5/6 还有一个待定的大气剧烈程度k
+2、在快门打开期间进行匀速直线运动
+g =  ∫ f（x+t）dt
+转化到频域上，就可以使得G = HF，其中F = 一个积分，于是将G和F分离开来了！
+推导同样见 https://wenku.baidu.com/view/2dc979556d85ec3a87c24028915f804d2a168700.html
+如果几乎没有噪声，可以直接除以逆滤波
+
+但是，如果噪声相对于退化函数的数量级不能忽略，除法的误差可能会太大
+尤其是H里面可能有接近0的值，比如高斯滤波器里面
+就算你准确地知道H的值，效果也并不好：复原效果全图都是糊的
+改进：wiener滤波。它是自适应滤波，目标是最小化与真实值之间平方误差的期望
+计算过程要用到傅立叶变换，以及复共轭，还需要估计一个信噪比常数
+https://blog.csdn.net/bluecol/article/details/46242355
+这里讲的比较好
+效果很棒！！！Digital Image Process几个字因为匀速直线抖动，本来那么糊的，竟然都能恢复了！！！
+
+Demo
+I = rgb2gray(Im);
+J = imnoise(I, ‘gaussian’, 0, 0.005); % 加高斯噪声
+K = wiener2(J, [H W]); % 再加wiener滤波修复
+H = fspecial(‘disk’, 10); 
+blurred = imfilter(J, H, ‘replicate’); % 均值滤波器修复
+对比K和blurred，K的效果明显更好
+
+————————————————————————————————————————————————
+
+作业：
+1. 均匀分布的均值E（X）为（a+b）/2，方差D（X）为（b-a）^2/12
+我之前胡乱算了一通
+= E(X^2)-E(X)^2
+= 1/(b-a)^2 * (b-a) / (M-m) - (1/(b-a)*(b-a) / (M-m))^2
+= 1/(b-a)(M-m) - 1/(M-m)^2
+-> 0 (when M-m = infinity) 别管了
+
+7. Consider we have an image composed of three constant flat regions. In other words, every line looks like c...cd...de...e, where cc is a given gray value, dd another, and ee yet another. Assume c>d and e>d. We want to compress the image and select to apply a simple predictor such that the current value is predicted as equal to the previous one just to its left (ignore boundary pixels). The prediction error is better modeled as
+
+salt & pepper model
+
+8. Assume we have the same image as in the previous question, and we add to it Gaussian noise with zero mean. Assume we apply the same type of prediction. The prediction error is now better modeled by
+
+not one or two Gaussian distributions, but three???
+
+% 加高斯和椒盐噪声
+I=imread('lena.png');
+J=imnoise(I,'salt & pepper',0.02);
+K=imnoise(I,'gaussian',0,0.02); % mean & varience
+imshow(J);
+imshow(K);
+% 中值滤波器
+for i=1:3
+	JM(:,:,i) = medfilt2(J(:,:,i), [3 3]);
+	KM(:,:,i) = medfilt2(K(:,:,i), [3 3]);
+end
+imshow(JM); % 效果很好
+imshow(KM); % 效果不好
+% wiener滤波器
+for i=1:3
+	[JW(:,:,i) noise] = wiener2(J(:,:,i),[5 5]);
+	[KW(:,:,i) noise] = wiener2(K(:,:,i),[5 5]);
+end
+imshow(JW); % 效果不好，椒盐依然很明显
+imshow(KW); % 效果比中值滤波好一些
+
+% 跟上周的non-local means的效果做比较。不行，电脑太卡了……
+ima=double(imread('lena.png'));
+sigma=10;
+rima=ima+sigma*randn(size(ima)); 
+
+% denoise
+fima=rima;
+for i=1:3
+   fima(:,:,i)=NLmeansfilter(rima(:,:,i),5,2,sigma);
+   % [fima(:,:,i) noise] = wiener2(rima(:,:,i),[5 5]);
+end
+imshow(uint8(fima));
+
+% 最好使用一张平均滤波模糊过的图片来比较
+% 当然，其实比较公平的办法是使用灰度级（单channel）来做吧
+
+% 随机将同一张图片加上高斯噪声，然后取平均，看能不能恢复原图。
+N = 10; %100效果更好
+[H,W,C] = size(I);
+Karray = zeros(H,W,C);
+for i=1:N
+	temp = imnoise(I,'gaussian',0,0.02); % mean & varience
+	Karray = Karray + double(temp);
+end
+Karray = Karray / N;
+Karray = uint8(Karray);
+imshow(Karray);
+% 同时，尝试把图片旋转一个角度呢？当然，需要进行对齐（align）
+
+关于JPEG和predictor的问题
+绘制预测误差的直方图。尝试拟合出一个函数，来了解预测错误的最佳分布类型。
+这个方面一直感觉很玄乎……以后专门来做吧
