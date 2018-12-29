@@ -1,0 +1,203 @@
+Sparse Modeling（稀疏学习）
+这涉及一些线性代数（linear algebra）的知识，不过没有上周的PDE那么难……
+Sparse and Redundant Representation（稀疏和冗余表示）
+
+有一个字典D，shape为N*K（表示N行K列，下同）
+它代表整个图像空间（basis：基），能线性表出所有的图像
+设原图为x，D右乘一个alpha即可得到它
+D alpha = x，称alpha就是这个图像的线性表示(signal)
+
+N有H*W行；假如K有256^(H*W)列，当然能表示所有可能的图像
+从D中取1列，就能得到任意可能的图像。称此时的sparsity = 1 <= 任意L
+但是K太大了，不现实。
+
+考虑图像空间的维数，K最少可以有H*W：
+每一列都是一个one-hot向量，当然也能表示所有可能的图像
+但是，这样的话alpha往往就是一个稠密向量了
+我们希望把图像空间用更少的列线性表出，设为L
+
+降低要求：不需要绝对精确地表示出原图像
+同时，子空间能表示的图像有限，反而有正则化的效果：去噪、修复图像……
+	设拟合出来的图像为y，原图为x
+	目标函数是 ||x-y|| + G(x)
+	一方面，需要让||x-y||的差值足够小
+	另一方面需要G这个prior项（正则项），表示关于原图，我们了解到的先验信息
+D可以有一些冗余列（atom），但又不要太多
+那么，N<=K，所谓的“过完备”
+看起来alpha的维数更多了；但是其中非0的还是很少
+
+————————————————————————————————————————————————————
+
+假如给定了字典D，设原图为x
+1、取alpha使得||D alpha - x||最小，且alpha的L0范数<=L
+那么alpha就是图像的L稀疏表示。
+2、取alpha使得alpha的L0范数最小，且||D alpha - x||<=epsilon（这是一个NP-hard问题）
+3、取alpha使得lambda * alpha的L0范数 + ||D alpha - x|| 最小（作为正则项考虑）
+以上三个目标哪个最好呢？
+还要考虑一下，alpha一定有解吗？又如果多解呢？
+
+一定可以找到足够稀疏的alpha吗？只要D足够好，是的：
+JPEG算法中，先分成8*8的小块（patch，规格统一化，以下认为H=W=8），然后做余弦变换：
+https://blog.csdn.net/dugudaibo/article/details/78410570
+写成矩阵形式的话，alpha = DxD^T
+可以看到，D的大部分系数的绝对值都很小
+于是，所得到的alpha = coefficients of cosine transform（？？？）
+也是稀疏或者近似稀疏的。之前在图像压缩一节里说过了，其中不少分量改成0也没有关系！
+
+什么叫做近似稀疏呢？
+
+在压缩感知里经常提到 "K稀疏" 的概念，这个是很容易理解的：也就是对于长度为N的向量（实际上是指一个N维离散离值信号）来说，它的N个元素值只有K个是非零的，其中K<<N，这时我们称这个向量是K稀疏的或者说是严格K稀疏的；实际中要做到严格K稀疏不容易，一般来说，只要除了这K个值其它的值很小很小，我们就认为向量是稀疏的，这时区别于严格K稀疏且就叫它K稀疏吧
+
+范数与稀疏性：https://www.cnblogs.com/AndyJee/p/5048235.html
+求解L0相关的问题往往是NP-hard的，往往需要转化为最小化L1、L2
+
+*理想情况下，||D alpha - x||可以小到0，也就是保证D alpha = x有解
+然后，需要让alpha的L0范数最小
+1、alpha的解是不唯一的？当然可能。当D有冗余列的时候（一列可由其他列线性表出）
+此时得到的alpha不一样，但是对应的x是一样的
+所以，D虽然要有冗余列，但是大部分列最好还是线性无关的（正交：orthogonal）
+2、什么时候alpha的解一定唯一？
+比如DCT（余弦变换）和傅立叶。公式很明白，算出来都是一一对应的
+3、什么时候alpha的解不唯一也不重要？
+
+求alpha使得alpha的L0范数最小，且||D alpha - x||<=epsilon，这是NP-hard问题
+证明：算法只能是挨着尝试：
+1、L0范数为1，那么哪一列非0呢？有C(K,1)种可能
+然后分别求解这些可能下，||D alpha - x||的最小值。如果有一个足够小，结束。否则：
+2、L0范数为2，那么哪一列非0呢？有C(K,2)种可能
+然后分别求解这些可能下，||D alpha - x||的最小值。如果有一个足够小，结束。否则：
+……
+最坏情况要求解2^K次
+假如K=1000，需要2^1000次
+就算事先知道L=10，那么也需要C(N,K) = C(1000,10) = 2*10^23次
+就算尝试一次只需要1ns = 10^-9s，那么也需要2*10^14s = 8352662年
+
+1、松弛方法（Relaxation）：改成求解L1、L2等的最小值
+可以证明，L0最小值点就是L1的最小值点：
+凸优化算法比贪婪算法所求的解更加精确，但是需要更高的计算复杂度。
+压缩感知重构算法之基追踪(Basis Pursuit, BP)
+参见：https://blog.csdn.net/jbb0523/article/details/51986554/
+
+2、贪心近似：匹配追踪算法（MP）
+思想：先评估出一个最“应该”非0的维度，如果还不够，再尝试补上第二个、第三个……
+https://www.cnblogs.com/theonegis/p/7653425.html
+用x跟D的每一列（atom）做内积，取绝对值最大的一个bi
+<x,bi>就是alpha的第i个元素值。先假设剩下的都是0
+然后检查差值r1 = x - bi<x,bi>，如果还不够小，则用r1跟余下的D的每一列（atom）做内积……
+这样，可以用x和D很快地得到一个alpha
+使得alpha的范数最小，且||D x - alpha||小于了指定阈值
+所谓的“alpha的解不唯一也不重要”
+
+3、改进算法：OMP（正交匹配追踪）等
+
+————————————————————————————————————————————————————
+
+还有一个问题：选择什么样的D比较好呢？
+Dictionary Learning：encourage sparsity
+它的本质还是进行降维（高维空间到低维空间的映射），类似于encoder
+
+DCT之类的已经很好了，不过是普适的：对任意一张图像，256^(H*W)种可能，都能处理好
+现实中，很多图像是基本不可能出现的
+也就是说，DCT还是有冗余的
+而如果我只需要处理人脸的图片，那么就更加冗余了
+要得到一个现实中最优的字典，需要对真实的图片进行训练
+
+把训练集里的P个图像拉成列向量，排在一起，组成X(N*P)矩阵
+同时求D(N*K)，稀疏列向量矩阵A(K*P)，使得：
+1、(X - DA)每一列的L2范数最小（即X 约等于 DA）
+2、A的每一列的L0范数 <= L
+P可以很大（几千万），而算法是在线训练，内存没有问题
+
+K-means：
+K-means 先随机选择K个初始点作为字典，K个初始点就代表K类。
+然后把图像聚出K个类（稀疏编码阶段），每个聚类中心（均值）做为新的字典（字典更新）。
+K-means的编码矩阵X是一个高度稀疏的矩阵，X的每一列就只有一个非零的元素，对应聚类中心。
+
+————————————————————————————————————————————————————
+
+k-SVD = k-means思想 + SVD
+
+1. 基本定义
+X是一个n*p矩阵，是参与训练的样本的集合，样本数量为p，假设样本的维度是n=H*W。
+D是一个n*k矩阵，是字典。
+A是一个k*p稀疏矩阵，是p个对应的signal的集合，signal的维度是k=n（假设n=k）
+
+2. 初始化字典
+从样本集X中随机挑选k个样本，作为D的初始值；并且初始化A为0。
+
+3. coding：跟MP是一样的
+为了简单起见，我们抽出一个样本进行讨论，其实是p个样本同时进行的
+假定样本为x向量，稀疏代码为alpha向量。
+现在x和D算是已知的，求解alpha，同时满足alpha尽量的稀疏，也就是非零元素尽量的少。
+
+假设D为[d1,d2,d3,d4,d5...]
+首先求出离x距离最近的原子，假设是d3。
+距离最近就是|(x, di)| / |di|最小
+那么我们就可以求出一个初步的x为[0,0,c3,0,0]
+其中x=c3*d3。可求得c3的值。（就是内积吧！）作为x的稀疏表示alpha
+然后计算x' = x-c3*d3。如果x'小于某个阈值，则结束。否则继续
+到这里跟MP是一样的。p个样本都得到了自己的稀疏表示。
+
+4. 还要进行词典更新
+K-svd采用逐列更新的方法更新字典
+https://blog.csdn.net/qq_31734083/article/details/79382091
+然后回到第3步，重新做MP
+
+————————————————————————————————————————————————————
+
+压缩感知
+x = D alpha
+现在求Q(q*N)，而D(N*K)，感知矩阵Q也是一个矮胖的矩阵，可以做到进一步的降维
+于是Q x = QD alpha
+设QD = D~，为一个新的字典（原字典D的降维）
+D~ alpha = x~，也比原来的x的维数少
+如果能从x~中恢复alpha，再根据已知的D，由D alpha得到x
+
+这个进一步的降维，是为了采样方便，而不是为了稀疏和降维。
+尼奎斯特采样定律：为了不失真地恢复模拟信号，采样频率应该不小于模拟信号频谱中最高频率的2倍。
+
+相机的传感器通过将模拟信号（光）转换为数字信号（Nyquist定理采样），如N pixel的图像信号，
+之后又通过压缩编码算法将N pixel的图像信号转化为K个系数表示的数据，
+而K<<N，那么问题来了：
+为什么我们费了一番心思获得了N个采样值，
+却最后又通过复杂的编码算法将之压缩成K个数值？
+能不能直接采样K个值？
+https://www.cnblogs.com/AndyJee/p/4973670.html
+
+高斯混合模型（GMM）就是用高斯概率密度函数（正态分布曲线）精确地量化事物
+它是一个将事物分解为若干的基于高斯概率密度函数（正态分布曲线）形成的模型。
+https://blog.csdn.net/hevc_cjl/article/details/9733945
+
+假设每个点均由一个单高斯分布生成，而N个数据共由M（明确）个单高斯模型生成
+具体某个数据属于哪个单高斯模型未知，且每个单高斯模型在混合模型中占的比例未知
+将所有来自不同分布的数据点混在一起，该分布称为高斯混合分布。
+
+还是把图像分成8*8的小块，并进行稀疏编码
+每一个小块对应一个高斯分布
+
+————————————————————————————————————————————————————
+
+2. Consider a 2×4 dictionary D composed of the transpose of the 2-dimensional atoms (0,1), (1,1), (0,1), and (2,1)(these form the columns of D). The sparsest representation of the vector x=(2,2) is given by the transpose of (these are the alpha):
+
+[0 1 0 2]	0	2
+[1 1 1 1]	2 = 2
+			0
+			0
+
+4. Consider the Gaussian Mixture Model in the last video. We want to use it to represent signals in N=64 dimensions. If we have k=100 Gaussians in the mixture, then the number of possible active sets (subspaces) is
+C(100,64) X
+100*64 X
+
+5. Are sparse modeling and compressed sensing the same?
+No, sparse modeling is about signal models and representations; compressed sensing is about an efficient novel data acquisition protocol.
+
+6. What needs to change in the general expression of image denoising we used for sparse modeling (equation in slide 4 of the 1st video this week) if instead of Gaussian additive noise we consider other types of additive noise?
+We need to define a new prior G. X G针对的是原图，而不是噪声
+We need to change the data fitting term, relationship with measurements, from a quadratic penalty to a penalty tailored to the noise. √
+
+8. Consider you have a dictionary composed of 100 random 10×10 patches from the given image. If you perform sparse coding with this dictionary:
+The average number of non-zero coefficients will be equal or greater than when using the dictionary of the same size for sparse representations, obtained with
+... (formula)
+
+9. Consider a video and use the patches of the current frame as dictionary for encoding the next frame. For scenes with only static objects:
+This will result in very sparse codes on average.
